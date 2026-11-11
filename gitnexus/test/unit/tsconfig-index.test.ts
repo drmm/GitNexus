@@ -253,3 +253,45 @@ describe('parsing', () => {
     expect(await loadTsconfigIndex(repo({ 'src/a.ts': '' }))).toBeNull();
   });
 });
+
+describe('solution-style configs (d0458)', () => {
+  it('lends a solution-style tsconfig.json the paths of the config it references', async () => {
+    // gitnexus-web's layout: tsconfig.json builds nothing ("files": [] plus
+    // references) and tsconfig.app.json declares the alias. The solution config
+    // ranks first in its directory, so its empty scope used to govern src/.
+    const root = repo({
+      'web/tsconfig.json': JSON.stringify({
+        files: [],
+        references: [{ path: './tsconfig.app.json' }, { path: './tsconfig.node.json' }],
+      }),
+      'web/tsconfig.app.json': JSON.stringify({
+        compilerOptions: { baseUrl: './', paths: { '@/*': ['./src/*'] } },
+        include: ['src'],
+      }),
+      'web/tsconfig.node.json': JSON.stringify({ compilerOptions: { composite: true } }),
+    });
+
+    const scope = tsconfigFor(await loadTsconfigIndex(root), 'web/src/App.tsx');
+
+    expect(scope?.dir).toBe('web');
+    expect(scope?.baseUrl).toBe('web');
+    expect(scope?.paths[0]?.pattern).toBe('@/*');
+    expect(scope?.paths[0]?.targets).toEqual(['web/src/*']);
+  });
+
+  it('leaves a config that builds files alone, even with references', async () => {
+    const root = repo({
+      'pkg/tsconfig.json': JSON.stringify({
+        files: ['index.ts'],
+        references: [{ path: './tsconfig.app.json' }],
+      }),
+      'pkg/tsconfig.app.json': JSON.stringify({
+        compilerOptions: { paths: { '@/*': ['./src/*'] } },
+      }),
+    });
+
+    const scope = tsconfigFor(await loadTsconfigIndex(root), 'pkg/index.ts');
+
+    expect(scope?.paths).toEqual([]);
+  });
+});

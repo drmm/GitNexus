@@ -85,8 +85,26 @@ export async function loadTsconfigIndex(repoRoot: string): Promise<TsconfigIndex
 
   const ranked: { scope: TsconfigScope; rank: number }[] = [];
   for (const absPath of files) {
-    const options = await readCompilerOptions(absPath, 0);
+    let options = await readCompilerOptions(absPath, 0);
     if (options === null) continue;
+    // A solution-style config (`"files": []` plus `references`, the Vite and
+    // `tsc --build` layout) governs no file itself: tsc builds each referenced
+    // project with that project's options. Left as it was, its empty scope
+    // ranked first in its directory and every `@/` import there went
+    // unresolved - gitnexus-web's 26 importers of `@/lib/lucide-icons` (d0458).
+    // It takes the first referenced config that declares `baseUrl` or `paths`.
+    if (options.baseUrl === undefined && options.paths === undefined) {
+      for (const referenced of await solutionReferences(absPath)) {
+        const referencedOptions = await readCompilerOptions(referenced, 1);
+        if (
+          referencedOptions !== null &&
+          (referencedOptions.baseUrl !== undefined || referencedOptions.paths !== undefined)
+        ) {
+          options = referencedOptions;
+          break;
+        }
+      }
+    }
     // `readCompilerOptions` resolves both to ABSOLUTE paths against whichever
     // config in the `extends` chain declared them, which is the only way the
     // chain stays unambiguous. Rebasing to repo-relative happens once, here.
@@ -220,6 +238,33 @@ async function readExtended(
     merged = { ...(merged ?? {}), ...options };
   }
   return merged;
+}
+
+/**
+ * The configs a SOLUTION-style tsconfig references, in declaration order, or
+ * `[]` for any other config. Solution-style means `"files": []` with a
+ * `references` array and no `include` - the config builds nothing itself.
+ */
+async function solutionReferences(absPath: string): Promise<string[]> {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = parseJsonc(await fs.readFile(absPath, 'utf-8'));
+  } catch {
+    return [];
+  }
+  const { files, references, include } = parsed;
+  if (!Array.isArray(files) || files.length > 0 || include !== undefined) return [];
+  if (!Array.isArray(references)) return [];
+  const dir = path.dirname(absPath);
+  const found: string[] = [];
+  for (const reference of references) {
+    const refPath = (reference as { path?: unknown } | null)?.path;
+    if (typeof refPath !== 'string') continue;
+    // A reference names a config file or a directory holding tsconfig.json.
+    const resolved = await firstReadableConfig(path.resolve(dir, refPath));
+    if (resolved !== null) found.push(resolved);
+  }
+  return found;
 }
 
 /**

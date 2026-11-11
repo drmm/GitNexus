@@ -8,6 +8,10 @@
  * so none of these edges existed. Every case runs twice: in memory, and on the
  * disk-backed ParsedFile store a real `analyze` uses, where the TypeScript
  * pass's context hook first sees only the TypeScript files' records.
+ *
+ * Also here: a solution-style `tsconfig.json` (`"files": []` + `references`,
+ * gitnexus-web's layout) lends its directory the `paths` of the config it
+ * references, so `@/lib/icons` resolves.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
@@ -92,6 +96,22 @@ describe('TypeScript importing JavaScript (d0458)', () => {
     for (const [mode, result] of runs) {
       expect(fileEdges(result, 'IMPORTS'), mode).toContain('uses-twin.ts -> twin.ts');
       expect(fileEdges(result, 'IMPORTS'), mode).not.toContain('uses-twin.ts -> twin.js');
+    }
+  });
+});
+
+describe('solution-style tsconfig.json (d0458)', () => {
+  let runs: [string, PipelineResult][];
+  beforeAll(async () => {
+    runs = await runBoth(path.join(FIXTURES, 'typescript-solution-tsconfig'));
+  }, 120000);
+
+  it("resolves web/src/App.tsx's @/lib/icons through tsconfig.app.json's paths", () => {
+    for (const [mode, result] of runs) {
+      expect(fileEdges(result, 'IMPORTS'), mode).toContain(
+        'web/src/App.tsx -> web/src/lib/icons.tsx',
+      );
+      expect(calls(result), mode).toContain('App → Icon');
     }
   });
 });
