@@ -412,21 +412,41 @@ export const scopeResolutionPhase: PipelinePhase<ScopeResolutionOutput> = {
         let scopeFilePaths: Set<string>;
         let contents: Map<string, string>;
         if (provider.collectScopeContextPaths !== undefined) {
+          const collectScopeContextPaths = provider.collectScopeContextPaths;
+          // Context hooks read worker-built ParsedFiles. Load the primary files'
+          // records before the hook, or a disk-backed run re-extracts every one of
+          // them on the main thread (upstream main took the same step).
+          await loadStoreFor(new Set(primaryFilePaths));
           // Context-expanding providers (e.g. Vue) need every primary file's
           // source up front for the closure hook, so load it all.
           const entryFileContents = await readFileContents(ctx.repoPath, primaryFilePaths);
-          scopeFilePaths = provider.collectScopeContextPaths({
-            primaryFilePaths,
-            preExtractedByPath,
-            entryFileContents,
-            allScannedPaths,
-            resolutionConfig,
-          });
+          const collect = (): Set<string> =>
+            collectScopeContextPaths({
+              primaryFilePaths,
+              preExtractedByPath,
+              entryFileContents,
+              allScannedPaths,
+              resolutionConfig,
+            });
+          scopeFilePaths = collect();
+          // A context file's own imports live in its stored ParsedFile, which a
+          // disk-backed run has not loaded when the hook first asks. Load what the
+          // hook added and ask again until it adds nothing, so a closure crosses a
+          // context file (a TS file -> a JS re-export -> the JS module, d0458).
+          // Bounded: each round loads at least one new path of a finite set.
+          const loaded = new Set(primaryFilePaths);
+          for (;;) {
+            const added = [...scopeFilePaths].filter((p) => !loaded.has(p));
+            if (added.length === 0) break;
+            for (const p of added) loaded.add(p);
+            if (!parsedFileStorePath) break;
+            await loadStoreFor(new Set(added));
+            scopeFilePaths = collect();
+          }
           // Read only the extra context files (TS/JS etc.) not already loaded.
           const extraPaths = [...scopeFilePaths].filter((p) => !entryFileContents.has(p));
           const extraContents = await readFileContents(ctx.repoPath, extraPaths);
           contents = new Map([...entryFileContents, ...extraContents]);
-          await loadStoreFor(scopeFilePaths);
         } else {
           scopeFilePaths = new Set(primaryFilePaths);
           await loadStoreFor(scopeFilePaths);

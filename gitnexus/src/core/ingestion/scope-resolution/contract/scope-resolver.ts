@@ -1576,7 +1576,7 @@ export interface ScopeResolver {
    * Optional hook to expand the set of file paths handed to the scope-
    * resolution run for this language.
    *
-   * Called once per language with:
+   * Called per language with:
    *   - `primaryFilePaths`      — files whose `getLanguageFromFilename` === this
    *                               resolver's `language` (e.g. all `.vue` files).
    *   - `preExtractedByPath`    — ParsedFile cache from the parse phase.
@@ -1587,9 +1587,17 @@ export interface ScopeResolver {
    * Return value: the full set of paths to include in the scope-resolution
    * run.  May be a superset of `primaryFilePaths`.
    *
+   * The phase calls it AGAIN after loading the stored ParsedFiles of the
+   * paths it added, until it adds none, so a closure can cross a context file
+   * whose imports only its stored ParsedFile carries (d0458). It must be pure:
+   * the same inputs give the same set, and a larger `preExtractedByPath`
+   * only ever grows it.
+   *
    * Vue uses this hook to collect the transitive TS/JS import closure of
    * every `.vue` file so that cross-file imports (`import { fn } from './api'`)
-   * resolve correctly within a single Vue scope-resolution pass.
+   * resolve correctly within a single Vue scope-resolution pass. TypeScript
+   * uses it to pull in the JavaScript files its files import, and their
+   * JavaScript imports, so `import { run } from './ops.mjs'` binds (d0458).
    *
    * This hook keeps language-specific scope-context policy inside the language
    * module, preventing shared pipeline code (`phase.ts`) from naming individual

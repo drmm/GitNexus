@@ -13,7 +13,7 @@
  */
 
 import type { NodeLabel, ParsedFile, ScopeId } from 'gitnexus-shared';
-import { SupportedLanguages } from 'gitnexus-shared';
+import { SupportedLanguages, getLanguageFromFilename } from 'gitnexus-shared';
 import { generateId } from '../../../../lib/utils.js';
 import { buildMro, defaultLinearize } from '../../scope-resolution/passes/mro.js';
 import { populateClassOwnedMembers } from '../../scope-resolution/scope/walkers.js';
@@ -34,6 +34,7 @@ import {
   loadNuxtAutoImports,
   type NuxtAutoImportConfig,
 } from './nuxt-auto-imports.js';
+import { extractParsedFile } from '../../scope-extractor-bridge.js';
 
 /** Shape the orchestrator threads in via `RunScopeResolutionInput.resolutionConfig`. */
 interface TypescriptResolutionConfig {
@@ -53,6 +54,12 @@ const TYPESCRIPT_TYPE_ONLY_BINDING_TYPES = new Set<NodeLabel>([
   'Trait',
   'Annotation',
   'Decorator',
+]);
+
+// Languages whose files a TypeScript file imports and this pass pulls in as
+// import-closure context (d0458): `.ts` -> `.js` / `.jsx` / `.mjs` / `.cjs`.
+const TS_SCOPE_CONTEXT_LANGUAGES: ReadonlySet<SupportedLanguages> = new Set([
+  SupportedLanguages.JavaScript,
 ]);
 
 /**
@@ -160,6 +167,63 @@ const typescriptScopeResolver: ScopeResolver = {
   // (mirrors C#), so enable the walk-up that lets the compound-
   // receiver resolver find them.
   hoistTypeBindingsToModule: true,
+
+  /**
+   * Pull the JavaScript files TypeScript files import into this pass (d0458).
+   *
+   * Each language's pass resolves imports against its OWN files
+   * (`runScopeResolution`'s `allFilePaths`), so a `.ts` importing `../ops.mjs`
+   * or `@/lib/x.js` got no IMPORTS edge and its calls into that file no CALLS
+   * edge - `impact` on a JavaScript function never listed a TypeScript caller.
+   * The JavaScript targets, and their own JavaScript imports (a re-export
+   * reaches the module that declares the name), join this pass as context, the
+   * way Vue pulls in TypeScript; their names bind and the edges are emitted. A
+   * JavaScript file in that closure that imports a TypeScript file is linked
+   * too, since the TypeScript files are this pass's own. A context file whose
+   * record is not loaded yet adds nothing now; the phase asks again once it is.
+   */
+  collectScopeContextPaths({
+    primaryFilePaths,
+    preExtractedByPath,
+    entryFileContents,
+    allScannedPaths,
+    resolutionConfig,
+  }) {
+    const visited = new Set<string>(primaryFilePaths);
+    const queue = [...primaryFilePaths];
+    const fallbackParsed = new Map<string, ParsedFile>();
+    for (let head = 0; head < queue.length; head++) {
+      const current = queue[head];
+      let parsed = preExtractedByPath.get(current) ?? fallbackParsed.get(current);
+      if (parsed === undefined) {
+        const source = entryFileContents.get(current);
+        if (source !== undefined) {
+          parsed = extractParsedFile(typescriptProvider, source, current);
+          if (parsed !== undefined) fallbackParsed.set(current, parsed);
+        }
+      }
+      if (parsed === undefined) continue;
+      for (const parsedImport of parsed.parsedImports) {
+        const targetRaw = parsedImport.targetRaw;
+        if (!targetRaw || targetRaw.trim().length === 0) continue;
+        const resolved = typescriptScopeResolver.resolveImportTarget(
+          targetRaw,
+          current,
+          allScannedPaths,
+          resolutionConfig,
+        );
+        if (resolved === null) continue;
+        for (const targetPath of typeof resolved === 'string' ? [resolved] : resolved) {
+          if (visited.has(targetPath) || !allScannedPaths.has(targetPath)) continue;
+          const lang = getLanguageFromFilename(targetPath);
+          if (lang === null || !TS_SCOPE_CONTEXT_LANGUAGES.has(lang)) continue;
+          visited.add(targetPath);
+          queue.push(targetPath);
+        }
+      }
+    }
+    return visited;
+  },
 
   /**
    * Emit CALLS edges for Nuxt/Nitro auto-imported symbols that are used
