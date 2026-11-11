@@ -276,6 +276,8 @@ Language-agnostic scope-resolution resolver. This is the resolution path for eve
 Orchestrator: `runScopeResolution(input, provider)` in `scope-resolution/pipeline/run.ts`.
 Pipeline phase: `scopeResolutionPhase` in `scope-resolution/pipeline/phase.ts` — iterates the registered `SCOPE_RESOLVERS` over the worker-serialized `ParsedFile`s. (Per-language `emitScopeCaptures` hooks may reuse a cached Tree via the orchestrator's `treeCache`, but in worker-pool runs that cache is empty — Trees can't cross MessageChannels — so they consume the pre-extracted `ParsedFile` instead; § Performance notes.)
 
+**Cross-language imports (d0458).** Each language's pass resolves imports against its own files only (`runScopeResolution`'s `allFilePaths`), so an import of another language's file binds nothing. A provider whose files import another language's pulls those files into its pass with `collectScopeContextPaths`: Vue takes its TS/JS import closure; TypeScript takes the JavaScript files its files import, and their JavaScript imports, so `import { run } from './ops.mjs'` gets its `IMPORTS` and `CALLS` edges, and a JavaScript file inside that closure is linked to the TypeScript it imports. The phase loads the stored ParsedFiles of the paths the hook added and asks it again until it adds none. A context file is resolved in both passes; edges dedupe by id, first writer wins. JavaScript pulls no TypeScript into its pass: its global name fallback would then guess at TypeScript call sites.
+
 ### Callable-value flow
 
 First-class callable values use a language-neutral inclusion analysis in `passes/callable-value-flow.ts`. Providers recognize their own syntax and emit JSON-safe `CallableFlowSite` facts (`seed`, `copy`, `alias`, `address`, `load`, `store`, `formal`, `argument`, and `invoke`) into `ParsedFile`; shared ingestion never branches on a language name. These always-on facts cross workers and the durable parse store, whose schema is bumped whenever their semantic shape changes.
@@ -414,6 +416,8 @@ Per-language tree-sitter queries use different AST node names but produce the **
 ### Import resolution
 
 Per-language import resolution uses the **configs + factory** pattern (like call/method/class extractors). Each language declares an `ImportResolutionConfig` in `import-resolvers/configs/`, listing an ordered chain of `ImportResolverStrategy` functions. `createImportResolver()` (in `resolver-factory.ts`) composes them: first non-null result wins. Low-level helpers shared across strategies live alongside the configs in `import-resolvers/` (e.g. `go.ts`, `rust.ts`, `python.ts`).
+
+TypeScript-family resolution (`languages/typescript/module-resolution.ts`, `file-candidates.ts`) follows tsc: a `./m.js` specifier tries `m.ts`, `m.tsx`, `m.d.ts` before a literal `m.js`, so a compiled sibling never takes a TypeScript import. `tsconfig.ts` gives each file its nearest tsconfig; a solution-style `tsconfig.json` (`"files": []` plus `references`, no `include`) governs nothing itself and takes the `baseUrl`/`paths` of the first referenced config that declares them.
 
 Unified 3-tier algorithm (`model/resolution-context.ts`), per-language `importSemantics` controls which tier activates:
 
