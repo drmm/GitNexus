@@ -87,7 +87,10 @@ export interface AnalyzeJob {
 
 const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const JOB_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+// 180 minutes on this fork (d0458): a cold GitNexus scan took 30.3 min on the
+// owner's PC (2026-09-10), past the 30-minute cap; until d0458 the installed
+// dist was hand-patched to this value after every npm install.
+const JOB_TIMEOUT_MS = 180 * 60 * 1000; // 180 minutes
 
 export class JobManager {
   private jobs = new Map<string, AnalyzeJob>();
@@ -198,11 +201,11 @@ export class JobManager {
   registerChild(jobId: string, child: ChildProcess) {
     this.children.set(jobId, child);
 
-    // 30-minute timeout
+    // 180-minute timeout (JOB_TIMEOUT_MS)
     const timer = setTimeout(() => {
       const job = this.jobs.get(jobId);
       if (job && !this.isTerminal(job.status)) {
-        this.cancelJob(jobId, 'Analysis timed out (30 minute limit)');
+        this.cancelJob(jobId, 'Analysis timed out (180 minute limit)');
       }
     }, JOB_TIMEOUT_MS);
     this.timeouts.set(jobId, timer);
