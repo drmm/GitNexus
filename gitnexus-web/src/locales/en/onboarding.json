@@ -67,9 +67,11 @@
     "azureDevOpsRepositoryUrl": "Azure DevOps Repository URL",
     "azureDevOpsSupported": "Format: https://dev.azure.com/organization/project/_git/repository",
     "localFolderPath": "Local Folder Path",
+    "localFolderPathSupported": "Indexed in place — the index is written to .gitnexus inside this folder.",
     "hideBackground": "Hide (analysis continues in background)",
     "upload": {
       "button": "Upload a folder",
+      "buttonHelp": "Copies the folder to the server and indexes the copy, not this machine's folder. For a repo already on this machine, type its path above instead.",
       "uploading": "Uploading…",
       "selected": "{{fileCount}} files ready ({{dropped}} skipped: .git, node_modules, build output)",
       "empty": "No analyzable files found in that folder."

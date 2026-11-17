@@ -67,9 +67,11 @@
     "azureDevOpsRepositoryUrl": "Azure DevOps 仓库 URL",
     "azureDevOpsSupported": "格式: http://server/Collection/Project/_git/Repository",
     "localFolderPath": "本地文件夹路径",
+    "localFolderPathSupported": "就地索引 — 索引会写入该文件夹内的 .gitnexus。",
     "hideBackground": "隐藏（分析继续在后台进行）",
     "upload": {
       "button": "上传文件夹",
+      "buttonHelp": "会将文件夹复制到服务器并索引该副本，而不是本机上的这个文件夹。若仓库已在本机，请改为在上方输入其路径。",
       "uploading": "上传中…",
       "selected": "已准备 {{fileCount}} 个文件（已跳过 {{dropped}} 个：.git、node_modules、构建产物）",
       "empty": "该文件夹中未找到可分析的文件。"

@@ -701,6 +701,9 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
               <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
             )}
           </div>
+          <p className="text-xs text-text-muted">
+            {t('onboarding:repoAnalyzer.localFolderPathSupported')}
+          </p>
           {/* Upload a folder from your computer — no server path or mount needed.
               The browser can't expose an absolute path, so we upload the files. */}
           <input
@@ -728,6 +731,9 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
             <FolderOpen className="h-3.5 w-3.5" />
             {t('onboarding:repoAnalyzer.upload.button')}
           </button>
+          <p className="text-xs text-text-muted">
+            {t('onboarding:repoAnalyzer.upload.buttonHelp')}
+          </p>
           {uploading && (
             <div role="status" aria-busy="true" data-testid="upload-progress" className="space-y-1">
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-elevated">
